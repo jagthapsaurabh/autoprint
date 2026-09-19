@@ -15,7 +15,8 @@ involvement, no browser tab needing to stay open.
 apps/
   server/   Node.js/Express API — auth, shop settings, file upload, pricing,
             Razorpay payments, print-job queue, Socket.io live updates.
-            Data is stored in an embedded SQLite DB (better-sqlite3).
+            Data is stored in an embedded SQLite DB using Node's built-in
+            `node:sqlite` module (no native build step required).
   web/      React (Vite) app with two experiences:
               • Customer page  (/print/:shopToken) — upload, crop, pay, track
               • Shop dashboard (/dashboard)         — settings, queue, wallet, QR
@@ -23,6 +24,13 @@ apps/
             queue and prints silently to a real printer (or a virtual
             fallback for local testing). Packaged into a Windows .exe with pkg.
 ```
+
+## Requirements
+
+- **Node.js 22.13+** (the server uses Node's built-in `node:sqlite` module —
+  no native compiler / Visual Studio Build Tools needed, `npm install` just
+  works on Windows/macOS/Linux). Check with `node -v`; upgrade from
+  https://nodejs.org if needed.
 
 ## Getting started (development)
 

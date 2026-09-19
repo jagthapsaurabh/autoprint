@@ -1,8 +1,14 @@
-// Lightweight embedded database layer (better-sqlite3) exposing a small
-// Prisma-like API subset so the rest of the codebase can stay declarative.
-// We use this instead of Prisma because this sandbox's network blocks
-// downloading Prisma's query-engine binaries; better-sqlite3 builds locally.
-import Database from "better-sqlite3";
+// Lightweight embedded database layer exposing a small Prisma-like API
+// subset so the rest of the codebase can stay declarative.
+//
+// This uses Node's *built-in* `node:sqlite` module (available without any
+// npm install or native build step since Node 22.5, no flag needed since
+// 22.13) instead of Prisma (whose engine binaries are unreachable on some
+// networks) or better-sqlite3 (which needs a C++ toolchain / Visual Studio
+// Build Tools to compile on Windows, which is what broke `npm install` for
+// many users). Requires Node.js 22.5+ (ideally 22.13+ to avoid the
+// experimental warning).
+import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
@@ -15,9 +21,10 @@ function resolveDbPath() {
   return abs;
 }
 
-const db = new Database(resolveDbPath());
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
+const db = new DatabaseSync(resolveDbPath());
+db.exec("PRAGMA journal_mode = WAL;");
+db.exec("PRAGMA foreign_keys = ON;");
+db.exec("PRAGMA busy_timeout = 5000;");
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS User (
@@ -114,6 +121,7 @@ function toRow(obj) {
   for (const [k, v] of Object.entries(obj)) {
     if (v instanceof Date) row[k] = v.toISOString();
     else if (typeof v === "boolean") row[k] = v ? 1 : 0;
+    else if (v === undefined) row[k] = null;
     else row[k] = v;
   }
   return row;
@@ -177,7 +185,8 @@ function makeModel(table, dateFields = []) {
       return Promise.resolve(fromRow(inserted, dateFields));
     },
     update({ where, data }) {
-      const target = db.prepare(`SELECT * FROM ${table} ${buildWhere(where).sql}`).get(buildWhere(where).params);
+      const { sql: whereSql, params: whereParams } = buildWhere(where);
+      const target = db.prepare(`SELECT * FROM ${table} ${whereSql}`).get(whereParams);
       if (!target) throw new Error(`${table} record not found for update`);
       const patch = { ...data };
       // support Prisma-style { increment } / { decrement }
@@ -222,16 +231,15 @@ export const sqlitePrisma = {
   printJob: makeModel("PrintJob", ["createdAt", "updatedAt", "printedAt"]),
   walletTransaction: makeModel("WalletTransaction", ["createdAt"]),
   async $transaction(actions) {
-    // actions is an array of already-created promises (Prisma style) — since
-    // our model methods run synchronously under the hood we just await them
-    // in order, wrapped in a single better-sqlite3 transaction for atomicity.
     if (typeof actions === "function") {
       return actions(sqlitePrisma);
     }
+    // NOTE: `actions` is an array of promises that were already created (and
+    // thus already executed, since our model methods run synchronously
+    // under the hood) by the time JS evaluates this argument list — this
+    // mirrors how the Prisma array-form of $transaction is called elsewhere
+    // in the codebase. We just await them in order here.
     const results = [];
-    const txn = db.transaction(() => {});
-    // better-sqlite3 transactions must be synchronous; our operations are
-    // effectively synchronous (wrapped in Promise.resolve), so this is safe.
     for (const action of actions) {
       results.push(await action);
     }
