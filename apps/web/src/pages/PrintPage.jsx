@@ -13,6 +13,8 @@ const STEP = {
   DONE: "DONE",
 };
 
+let nextLocalId = 1;
+
 function loadRazorpayScript() {
   return new Promise((resolve) => {
     if (window.Razorpay) return resolve(true);
@@ -29,8 +31,9 @@ export default function PrintPage() {
   const [step, setStep] = useState(STEP.LOADING);
   const [shopError, setShopError] = useState("");
   const [shop, setShop] = useState(null);
-  const [file, setFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
+  // items: [{ localId, file, previewUrl, isImage }] — supports multiple
+  // images and/or PDFs uploaded together and merged into one print job.
+  const [items, setItems] = useState([]);
   const [copies, setCopies] = useState(1);
   const [colorMode, setColorMode] = useState("GRAY");
   const [quote, setQuote] = useState(null);
@@ -38,7 +41,7 @@ export default function PrintPage() {
   const [busy, setBusy] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-  const [showCrop, setShowCrop] = useState(false);
+  const [cropTargetId, setCropTargetId] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -77,22 +80,54 @@ export default function PrintPage() {
     };
   }, [job?.id]);
 
-  const onPickFile = (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setFile(f);
+  // Revoke object URLs on unmount to avoid leaking memory
+  useEffect(() => {
+    return () => {
+      items.forEach((it) => it.previewUrl && URL.revokeObjectURL(it.previewUrl));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onPickFiles = (e) => {
+    const picked = Array.from(e.target.files || []);
+    if (!picked.length) return;
     setErrorMsg("");
-    if (f.type.startsWith("image/")) setPreviewUrl(URL.createObjectURL(f));
-    else setPreviewUrl(null);
+    const newItems = picked.map((f) => ({
+      localId: nextLocalId++,
+      file: f,
+      previewUrl: f.type.startsWith("image/") ? URL.createObjectURL(f) : null,
+      isImage: f.type.startsWith("image/"),
+    }));
+    setItems((prev) => [...prev, ...newItems]);
+    e.target.value = ""; // allow picking the same file again later
+  };
+
+  const removeItem = (localId) => {
+    setItems((prev) => {
+      const target = prev.find((it) => it.localId === localId);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((it) => it.localId !== localId);
+    });
+  };
+
+  const moveItem = (localId, direction) => {
+    setItems((prev) => {
+      const idx = prev.findIndex((it) => it.localId === localId);
+      const swapWith = idx + direction;
+      if (idx < 0 || swapWith < 0 || swapWith >= prev.length) return prev;
+      const copy = [...prev];
+      [copy[idx], copy[swapWith]] = [copy[swapWith], copy[idx]];
+      return copy;
+    });
   };
 
   const getQuote = async () => {
-    if (!file) return;
+    if (!items.length) return;
     setBusy(true);
     setErrorMsg("");
     try {
       const fd = new FormData();
-      fd.append("file", file);
+      items.forEach((it) => fd.append("files", it.file));
       fd.append("copies", copies);
       fd.append("colorMode", colorMode);
       const { data } = await api.post(`/public/shop/${token}/quote`, fd, {
@@ -101,13 +136,13 @@ export default function PrintPage() {
       setQuote(data);
       setStep(STEP.PREVIEW);
     } catch (err) {
-      setErrorMsg(err.response?.data?.error || "Failed to process file");
+      setErrorMsg(err.response?.data?.error || "Failed to process file(s)");
     } finally {
       setBusy(false);
     }
   };
 
-  const createJob = async (overridePaid) => {
+  const createJob = async () => {
     const { data } = await api.post(`/public/shop/${token}/jobs`, {
       fileToken: quote.fileToken,
       fileName: quote.fileName,
@@ -196,6 +231,15 @@ export default function PrintPage() {
     }
   };
 
+  const startOver = () => {
+    items.forEach((it) => it.previewUrl && URL.revokeObjectURL(it.previewUrl));
+    setItems([]);
+    setQuote(null);
+    setJob(null);
+    setErrorMsg("");
+    setStep(STEP.UPLOAD);
+  };
+
   if (step === STEP.LOADING) {
     return <div className="print-page center-msg">Loading shop...</div>;
   }
@@ -208,11 +252,13 @@ export default function PrintPage() {
     );
   }
 
+  const cropTarget = items.find((it) => it.localId === cropTargetId);
+
   return (
     <div className="print-page">
       <header className="print-header">
         <h1>🖨️ {shop.name}</h1>
-        <p>Upload your file, preview, and send it straight to the shop printer.</p>
+        <p>Upload one or more files — photos and PDFs can be combined into a single print job.</p>
       </header>
 
       {errorMsg && <div className="error-banner">{errorMsg}</div>}
@@ -222,40 +268,77 @@ export default function PrintPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
-            onChange={onPickFile}
+            multiple
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            onChange={onPickFiles}
           />
-          {previewUrl && (
-            <div className="preview-block">
-              <img className="file-preview" src={previewUrl} alt="preview" />
-              <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowCrop(true)}>
-                ✂️ Crop image
-              </button>
+          <p className="hint">You can select multiple photos and/or PDFs — pick more anytime with the button above.</p>
+
+          {items.length > 0 && (
+            <div className="file-list">
+              {items.map((it, idx) => (
+                <div className="file-list-item" key={it.localId}>
+                  <span className="file-list-index">{idx + 1}</span>
+                  {it.previewUrl ? (
+                    <img className="file-list-thumb" src={it.previewUrl} alt={it.file.name} />
+                  ) : (
+                    <div className="file-list-thumb file-list-thumb-pdf">📄</div>
+                  )}
+                  <div className="file-list-meta">
+                    <strong>{it.file.name}</strong>
+                    <span className="muted">{(it.file.size / 1024).toFixed(0)} KB</span>
+                  </div>
+                  <div className="file-list-actions">
+                    {it.isImage && (
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCropTargetId(it.localId)}>
+                        ✂️
+                      </button>
+                    )}
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => moveItem(it.localId, -1)} disabled={idx === 0}>
+                      ↑
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => moveItem(it.localId, 1)} disabled={idx === items.length - 1}>
+                      ↓
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeItem(it.localId)}>
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
-          {file && !previewUrl && <div className="file-chip">📄 {file.name}</div>}
-          {showCrop && (
+
+          {cropTarget && (
             <CropModal
-              imageSrc={previewUrl}
-              fileType={file?.type}
-              fileName={file?.name || "cropped.jpg"}
-              onCancel={() => setShowCrop(false)}
+              imageSrc={cropTarget.previewUrl}
+              fileType={cropTarget.file.type}
+              fileName={cropTarget.file.name}
+              onCancel={() => setCropTargetId(null)}
               onDone={(croppedFile) => {
-                setShowCrop(false);
+                setCropTargetId(null);
                 if (croppedFile) {
-                  setFile(croppedFile);
-                  setPreviewUrl(URL.createObjectURL(croppedFile));
+                  setItems((prev) =>
+                    prev.map((it) =>
+                      it.localId === cropTarget.localId
+                        ? (() => {
+                            URL.revokeObjectURL(it.previewUrl);
+                            return { ...it, file: croppedFile, previewUrl: URL.createObjectURL(croppedFile) };
+                          })()
+                        : it
+                    )
+                  );
                 }
               }}
             />
           )}
 
           <div className="field-row">
-            <label>Copies</label>
+            <label>Copies (of the whole set)</label>
             <input
               type="number"
               min={1}
-              max={50}
+              max={200}
               value={copies}
               onChange={(e) => setCopies(Math.max(1, parseInt(e.target.value || "1", 10)))}
             />
@@ -293,8 +376,8 @@ export default function PrintPage() {
             <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="e.g. Rahul" />
           </div>
 
-          <button className="btn btn-primary btn-lg" disabled={!file || busy} onClick={getQuote}>
-            {busy ? "Processing..." : "Continue"}
+          <button className="btn btn-primary btn-lg" disabled={!items.length || busy} onClick={getQuote}>
+            {busy ? "Processing..." : `Continue with ${items.length || 0} file${items.length === 1 ? "" : "s"}`}
           </button>
         </div>
       )}
@@ -303,8 +386,8 @@ export default function PrintPage() {
         <div className="upload-card">
           <h3>Confirm your print</h3>
           <ul className="summary-list">
-            <li>File: {quote.fileName}</li>
-            <li>Pages: {quote.pages}</li>
+            <li>Files: {quote.fileCount} ({quote.sourceFileNames?.join(", ")})</li>
+            <li>Total pages: {quote.pages}</li>
             <li>Copies: {copies}</li>
             <li>Mode: {colorMode === "COLOR" ? "Color" : "Black & White"}</li>
             <li className="amount">Amount: ₹{quote.amount}</li>
@@ -340,6 +423,11 @@ export default function PrintPage() {
         <div className="upload-card">
           <h3>Job status</h3>
           <JobStatusView job={job} />
+          {["PRINTED", "FAILED", "CANCELLED"].includes(job.status) && (
+            <button className="btn btn-outline" onClick={startOver}>
+              Print another file
+            </button>
+          )}
         </div>
       )}
     </div>

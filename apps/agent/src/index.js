@@ -59,8 +59,24 @@ async function processQueue() {
   }
 }
 
+const EXT_BY_MIME = {
+  "application/pdf": ".pdf",
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+};
+
+function extensionFor(job) {
+  // Jobs are merged server-side into a single PDF, so fileType is the
+  // reliable source of truth for the extension — job.fileName is often a
+  // human-readable label like "3 files (a.jpg, b.png, c.pdf)" for multi-file
+  // jobs and must NOT be used with path.extname() (it would incorrectly
+  // grab ".pdf)" from inside that label).
+  return EXT_BY_MIME[job.fileType] || ".pdf";
+}
+
 async function handleJob(job, settings) {
-  const localPath = path.join(TMP_DIR, `${job.id}${path.extname(job.fileName) || ""}`);
+  const localPath = path.join(TMP_DIR, `${job.id}${extensionFor(job)}`);
   try {
     console.log(`[AutoPrint Agent] Downloading job ${job.id} (${job.fileName})...`);
     const response = await http.get(job.downloadUrl, { responseType: "arraybuffer" });

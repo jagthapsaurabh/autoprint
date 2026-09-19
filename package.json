@@ -9,7 +9,9 @@
     "dev:server": "npm run dev --workspace=apps/server",
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:agent": "npm run dev --workspace=apps/agent",
-    "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\""
+    "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
+    "build": "npm run build --workspace=apps/web",
+    "start": "npm run start --workspace=apps/server"
   },
   "devDependencies": {
     "concurrently": "^10.0.5"
