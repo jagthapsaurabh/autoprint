@@ -189,13 +189,19 @@ publicRouter.post("/shop/:token/jobs", async (req, res) => {
     const filePath = path.join(UPLOAD_DIR, fileToken);
     if (!fs.existsSync(filePath)) return res.status(400).json({ error: "Uploaded file expired, please re-upload" });
 
-    const paymentRequired = shop.paymentMode !== "NO_PAYMENT" && Number(amount) > 0;
-    const initialStatus = paymentRequired
+    // Only ONLINE mode actually routes money through the payment gateway
+    // into the platform's account — that's the only case where the shop's
+    // in-app wallet should ever be credited (see routes/payment.js). CASH
+    // jobs are paid directly to shop staff at the counter and must never
+    // touch the wallet/payout flow, even though a price is still shown.
+    const onlinePaymentRequired = shop.paymentMode === "ONLINE" && Number(amount) > 0;
+    const payAtCounter = shop.paymentMode === "CASH" && Number(amount) > 0;
+    const initialStatus = onlinePaymentRequired
       ? "AWAITING_PAYMENT"
       : shop.approvalRequired
       ? "PENDING_APPROVAL"
       : "QUEUED";
-    const initialPaymentStatus = paymentRequired ? "PENDING" : "NOT_REQUIRED";
+    const initialPaymentStatus = onlinePaymentRequired ? "PENDING" : payAtCounter ? "PAY_AT_COUNTER" : "NOT_REQUIRED";
 
     const job = await prisma.printJob.create({
       data: {

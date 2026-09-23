@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
-import { razorpay, razorpayEnabled, verifyRazorpaySignature } from "../lib/razorpay.js";
+import { razorpay, razorpayEnabled, verifyRazorpaySignature, fetchRazorpayPaymentFee } from "../lib/razorpay.js";
+import { computeOnlinePayout } from "../lib/payout.js";
 
 export const paymentRouter = Router();
 
@@ -52,6 +53,13 @@ paymentRouter.post("/verify", async (req, res) => {
     const job = await prisma.printJob.findUnique({ where: { id: jobId } });
     if (!job) return res.status(404).json({ error: "Job not found" });
 
+    // Idempotency guard: never re-verify/re-credit a job that's already
+    // been paid (e.g. a duplicate webhook-less client retry after a flaky
+    // network response).
+    if (job.paymentStatus === "PAID") {
+      return res.json({ job });
+    }
+
     let verified = false;
     if (razorpayEnabled && razorpay_order_id && razorpay_payment_id && razorpay_signature) {
       verified = verifyRazorpaySignature({
@@ -78,16 +86,34 @@ paymentRouter.post("/verify", async (req, res) => {
       },
     });
 
-    const netAmount = shop.upiId ? job.amount : Math.round(job.amount * 0.96 * 100) / 100; // 4% gateway fee unless direct-to-UPI
+    // This is the only place money should ever be credited to a shop's
+    // wallet — it's the only point where we know the platform actually
+    // collected the customer's payment through the gateway. Payout is the
+    // amount the customer paid MINUS the real gateway fee (Razorpay's own
+    // `fee`, which already includes GST) and any platform commission —
+    // never the full amount, and never for cash/no-payment jobs (those are
+    // handled entirely outside this route, see routes/public.js).
+    let gatewayFee = null;
+    if (razorpayEnabled && razorpay_payment_id) {
+      gatewayFee = await fetchRazorpayPaymentFee(razorpay_payment_id);
+    }
+    const payout = computeOnlinePayout({ grossAmount: job.amount, gatewayFee });
+
     await prisma.$transaction([
-      prisma.shop.update({ where: { id: shop.id }, data: { walletBalance: { increment: netAmount } } }),
+      prisma.shop.update({ where: { id: shop.id }, data: { walletBalance: { increment: payout.netPayout } } }),
       prisma.walletTransaction.create({
-        data: { shopId: shop.id, amount: netAmount, type: "CREDIT", jobId: job.id, note: `Print job ${job.fileName}` },
+        data: {
+          shopId: shop.id,
+          amount: payout.netPayout,
+          type: "CREDIT",
+          jobId: job.id,
+          note: `Print job ${job.fileName} — ${payout.summary}`,
+        },
       }),
     ]);
 
     req.app.get("io").to(`shop:${shop.id}`).emit("job:new", updated);
-    res.json({ job: updated });
+    res.json({ job: updated, payout });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to verify payment" });

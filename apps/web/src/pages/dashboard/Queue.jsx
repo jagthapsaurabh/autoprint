@@ -68,7 +68,8 @@ export default function Queue() {
             <div className="job-main">
               <strong>{job.fileName}</strong>
               <span className="muted">
-                {job.pages} pg × {job.copies} • {job.colorMode} • ₹{job.amount} •{" "}
+                {job.pages} pg × {job.copies} • {job.colorMode} • ₹{job.amount}
+                {job.paymentStatus === "PAY_AT_COUNTER" && " (collect cash)"} •{" "}
                 {job.customerName || "Guest"}
               </span>
             </div>

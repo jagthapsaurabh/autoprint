@@ -26,7 +26,27 @@ Edit `apps/server/.env`:
 - `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` — get live keys from
   https://dashboard.razorpay.com/app/keys once KYC is done. Leave blank to
   keep the built-in manual "confirm payment" demo mode.
+- `PLATFORM_COMMISSION_PERCENT` — your own cut of every **online** customer
+  payment, on top of the flat ₹499/mo subscription. Defaults to `0`
+  (subscription-only revenue model). Set this only if you decide to also
+  take a transaction commission.
+- `RAZORPAY_ASSUMED_FEE_PERCENT` — fallback rate (default `2.36`, matching
+  Razorpay's standard domestic MDR + 18% GST) used only when the real
+  per-payment fee can't be looked up from Razorpay (e.g. demo mode). When
+  live keys are configured, payouts use Razorpay's actual reported fee for
+  each payment instead of this estimate — see
+  `apps/server/src/lib/payout.js`.
 - `NODE_ENV=production`
+
+**How shop payouts work:** a shop's in-app wallet is only ever credited for
+**online** payments the platform actually collects through Razorpay — never
+for the full amount the customer paid. Razorpay's transaction fee (+ GST)
+is deducted first (using the real fee Razorpay reports for that payment
+where possible), then any `PLATFORM_COMMISSION_PERCENT` you've configured,
+and the remainder is credited to the shop's wallet. "Cash at Counter" and
+"No Payment" jobs never touch the wallet at all — that money goes directly
+to the shop's till and was never in the platform's account to begin with.
+Each wallet transaction's note shows the exact breakdown for transparency.
 
 Build the web app and start everything as a single process:
 

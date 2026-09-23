@@ -392,17 +392,23 @@ export default function PrintPage() {
             <li>Mode: {colorMode === "COLOR" ? "Color" : "Black & White"}</li>
             <li className="amount">Amount: ₹{quote.amount}</li>
           </ul>
-          {quote.amount > 0 ? (
-            <p className="hint">You'll be asked to pay before the print job is sent.</p>
-          ) : (
-            <p className="hint">No payment needed — this will print immediately.</p>
+          {quote.amount > 0 && shop.paymentMode === "ONLINE" && (
+            <p className="hint">You'll be asked to pay online before the print job is sent.</p>
           )}
+          {quote.amount > 0 && shop.paymentMode === "CASH" && (
+            <p className="hint">Please pay ₹{quote.amount} in cash at the counter — your job will print now.</p>
+          )}
+          {quote.amount === 0 && <p className="hint">No payment needed — this will print immediately.</p>}
           <div className="btn-row">
             <button className="btn btn-ghost" onClick={() => setStep(STEP.UPLOAD)}>
               Back
             </button>
             <button className="btn btn-primary btn-lg" disabled={busy} onClick={handlePrintNow}>
-              {busy ? "Please wait..." : quote.amount > 0 ? "Pay & Print" : "Send to Printer"}
+              {busy
+                ? "Please wait..."
+                : quote.amount > 0 && shop.paymentMode === "ONLINE"
+                ? "Pay & Print"
+                : "Send to Printer"}
             </button>
           </div>
         </div>
