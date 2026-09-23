@@ -1,0 +1,22 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Server runtime data
+apps/server/.env
+apps/server/*.db
+apps/server/*.db-*
+apps/server/uploads/
+
+# Agent runtime data
+apps/agent/.env
+apps/agent/prints/
+apps/agent/dist/
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.log
