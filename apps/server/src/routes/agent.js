@@ -66,6 +66,11 @@ agentRouter.get("/queue", requireAgent, async (req, res) => {
     })),
     settings: {
       defaultPrinterName: shop.defaultPrinterName,
+      // Per-mode printer overrides: color jobs use colorPrinterName,
+      // B&W/gray jobs use grayPrinterName; either falls back to
+      // defaultPrinterName, then to the Windows default (see agent).
+      colorPrinterName: shop.colorPrinterName,
+      grayPrinterName: shop.grayPrinterName,
       printRule: shop.printRule,
     },
   });

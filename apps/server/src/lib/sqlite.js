@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS Shop (
   grayRate REAL NOT NULL DEFAULT 2,
   upiId TEXT,
   defaultPrinterName TEXT,
+  colorPrinterName TEXT,
+  grayPrinterName TEXT,
   autoPrintActive INTEGER NOT NULL DEFAULT 0,
   subscriptionActive INTEGER NOT NULL DEFAULT 0,
   subscriptionUntil TEXT,
@@ -113,6 +115,15 @@ CREATE INDEX IF NOT EXISTS idx_printjob_shop ON PrintJob(shopId);
 CREATE INDEX IF NOT EXISTS idx_printjob_status ON PrintJob(shopId, status);
 CREATE INDEX IF NOT EXISTS idx_wallet_shop ON WalletTransaction(shopId);
 `);
+
+// Lightweight migration for databases created before these columns existed
+// (CREATE TABLE IF NOT EXISTS won't add columns to an existing table).
+const shopColumns = db.prepare("PRAGMA table_info(Shop)").all().map((c) => c.name);
+for (const col of ["colorPrinterName", "grayPrinterName"]) {
+  if (!shopColumns.includes(col)) {
+    db.exec(`ALTER TABLE Shop ADD COLUMN ${col} TEXT;`);
+  }
+}
 
 const BOOL_FIELDS = new Set(["approvalRequired", "autoPrintActive", "subscriptionActive", "online"]);
 

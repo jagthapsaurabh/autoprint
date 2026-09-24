@@ -121,6 +121,20 @@ copy counts differ per file, the copies are baked directly into the merged
 PDF (each file's pages repeated its number of times) so one print command
 still produces the right output. A job is capped at 2000 physical pages.
 
+## Per-mode printers (color vs black & white)
+
+A shop can run color and B&W jobs on **different physical printers**. In
+Dashboard → Settings, each mode gets its own printer (chosen from the
+printers the agent reports):
+
+- **Color printer** — all `COLOR` jobs are sent here.
+- **Black & white printer** — all `GRAY`/B&W jobs are sent here.
+- **Default Printer** — fallback used whenever a mode has no dedicated
+  printer assigned (and the Windows default printer when that's empty too).
+
+The agent picks the printer per job from its `colorMode`, so a mixed queue
+sends each job to the right machine automatically.
+
 ## Production hardening
 
 - `helmet` (security headers), `compression`, request logging (`morgan`),

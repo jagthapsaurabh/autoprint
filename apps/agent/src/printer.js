@@ -36,6 +36,17 @@ async function hasCups() {
   }
 }
 
+/**
+ * Chooses the physical printer for a job based on the shop's per-mode
+ * settings: color jobs go to the color printer, B&W/gray jobs to the gray
+ * printer. Either mode's printer falls back to the shop's default printer,
+ * which itself falls back to the Windows default (returns undefined).
+ */
+export function selectPrinter(job, settings = {}) {
+  const modePrinter = job?.colorMode === "COLOR" ? settings.colorPrinterName : settings.grayPrinterName;
+  return modePrinter || settings.defaultPrinterName || undefined;
+}
+
 export async function listPrinters() {
   if (PLATFORM === "win32") {
     try {

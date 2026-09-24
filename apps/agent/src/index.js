@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { loadConfig } from "./config.js";
-import { listPrinters, printFile, osInfo } from "./printer.js";
+import { listPrinters, printFile, selectPrinter, osInfo } from "./printer.js";
 
 const VERSION = "1.0.0";
 const POLL_INTERVAL_MS = Number(process.env.AUTOPRINT_POLL_MS || 4000);
@@ -84,9 +84,14 @@ async function handleJob(job, settings) {
 
     await http.post(`/api/agent/jobs/${job.id}/status`, { status: "PRINTING" });
 
-    console.log(`[AutoPrint Agent] Printing ${job.fileName} x${job.copies} (${job.colorMode})...`);
+    // Per-mode printer: color jobs -> color printer, B&W jobs -> gray
+    // printer, each falling back to the shop default, then Windows default.
+    const printer = selectPrinter(job, settings);
+    console.log(
+      `[AutoPrint Agent] Printing ${job.fileName} x${job.copies} (${job.colorMode}) -> ${printer || "Windows default printer"}...`
+    );
     await printFile(localPath, {
-      printer: settings.defaultPrinterName || undefined,
+      printer,
       copies: job.copies,
       colorMode: job.colorMode,
     });

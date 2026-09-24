@@ -33,6 +33,8 @@ shopRouter.patch("/settings", requireAuth, async (req, res) => {
     grayRate,
     upiId,
     defaultPrinterName,
+    colorPrinterName,
+    grayPrinterName,
     name,
     address,
     whatsapp,
@@ -48,6 +50,10 @@ shopRouter.patch("/settings", requireAuth, async (req, res) => {
       ...(grayRate !== undefined ? { grayRate: Number(grayRate) } : {}),
       ...(upiId !== undefined ? { upiId } : {}),
       ...(defaultPrinterName !== undefined ? { defaultPrinterName } : {}),
+      // Per-mode printer overrides — empty string clears the override so the
+      // job falls back to the default printer (see agent queue + agent).
+      ...(colorPrinterName !== undefined ? { colorPrinterName: colorPrinterName || null } : {}),
+      ...(grayPrinterName !== undefined ? { grayPrinterName: grayPrinterName || null } : {}),
       ...(name !== undefined ? { name } : {}),
       ...(address !== undefined ? { address } : {}),
       ...(whatsapp !== undefined ? { whatsapp } : {}),
