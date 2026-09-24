@@ -31,10 +31,11 @@ export default function PrintPage() {
   const [step, setStep] = useState(STEP.LOADING);
   const [shopError, setShopError] = useState("");
   const [shop, setShop] = useState(null);
-  // items: [{ localId, file, previewUrl, isImage }] — supports multiple
+  // items: [{ localId, file, previewUrl, isImage, pages, copies }] — multiple
   // images and/or PDFs uploaded together and merged into one print job.
+  // `pages` is a free-text page selection for PDFs (e.g. "2-4, 7", empty =
+  // all pages); `copies` is how many copies of that file's selection to print.
   const [items, setItems] = useState([]);
-  const [copies, setCopies] = useState(1);
   const [colorMode, setColorMode] = useState("GRAY");
   const [quote, setQuote] = useState(null);
   const [job, setJob] = useState(null);
@@ -97,6 +98,8 @@ export default function PrintPage() {
       file: f,
       previewUrl: f.type.startsWith("image/") ? URL.createObjectURL(f) : null,
       isImage: f.type.startsWith("image/"),
+      pages: "",
+      copies: 1,
     }));
     setItems((prev) => [...prev, ...newItems]);
     e.target.value = ""; // allow picking the same file again later
@@ -121,6 +124,10 @@ export default function PrintPage() {
     });
   };
 
+  const updateItem = (localId, patch) => {
+    setItems((prev) => prev.map((it) => (it.localId === localId ? { ...it, ...patch } : it)));
+  };
+
   const getQuote = async () => {
     if (!items.length) return;
     setBusy(true);
@@ -128,7 +135,11 @@ export default function PrintPage() {
     try {
       const fd = new FormData();
       items.forEach((it) => fd.append("files", it.file));
-      fd.append("copies", copies);
+      // Per-file page selection + copies, aligned with the files' order.
+      fd.append(
+        "pageSpecs",
+        JSON.stringify(items.map((it) => ({ pages: it.pages || "", copies: it.copies })))
+      );
       fd.append("colorMode", colorMode);
       const { data } = await api.post(`/public/shop/${token}/quote`, fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -148,7 +159,7 @@ export default function PrintPage() {
       fileName: quote.fileName,
       fileType: quote.fileType,
       pages: quote.pages,
-      copies,
+      copies: quote.copies,
       colorMode,
       amount: quote.amount,
       customerName,
@@ -288,6 +299,31 @@ export default function PrintPage() {
                     <strong>{it.file.name}</strong>
                     <span className="muted">{(it.file.size / 1024).toFixed(0)} KB</span>
                   </div>
+                  <div className="file-list-options">
+                    {!it.isImage && (
+                      <label className="file-opt">
+                        <span>Pages</span>
+                        <input
+                          value={it.pages}
+                          onChange={(e) => updateItem(it.localId, { pages: e.target.value })}
+                          placeholder="All (e.g. 2-4, 7)"
+                          inputMode="numeric"
+                        />
+                      </label>
+                    )}
+                    <label className="file-opt">
+                      <span>Copies</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={200}
+                        value={it.copies}
+                        onChange={(e) =>
+                          updateItem(it.localId, { copies: Math.max(1, Math.min(200, parseInt(e.target.value || "1", 10))) })
+                        }
+                      />
+                    </label>
+                  </div>
                   <div className="file-list-actions">
                     {it.isImage && (
                       <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCropTargetId(it.localId)}>
@@ -333,17 +369,6 @@ export default function PrintPage() {
             />
           )}
 
-          <div className="field-row">
-            <label>Copies (of the whole set)</label>
-            <input
-              type="number"
-              min={1}
-              max={200}
-              value={copies}
-              onChange={(e) => setCopies(Math.max(1, parseInt(e.target.value || "1", 10)))}
-            />
-          </div>
-
           {shop.printRule === "CUSTOMER_CHOICE" && (
             <div className="field-row">
               <label>Print mode</label>
@@ -386,9 +411,14 @@ export default function PrintPage() {
         <div className="upload-card">
           <h3>Confirm your print</h3>
           <ul className="summary-list">
-            <li>Files: {quote.fileCount} ({quote.sourceFileNames?.join(", ")})</li>
-            <li>Total pages: {quote.pages}</li>
-            <li>Copies: {copies}</li>
+            {quote.perFile?.length
+              ? quote.perFile.map((f, i) => (
+                  <li key={i}>
+                    {f.fileName}: {f.pagesLabel} × {f.copies} cop{f.copies === 1 ? "" : "ies"}
+                  </li>
+                ))
+              : <li>Files: {quote.fileCount} ({quote.sourceFileNames?.join(", ")})</li>}
+            <li>Total pages to print: {quote.pages * (quote.copies || 1)}</li>
             <li>Mode: {colorMode === "COLOR" ? "Color" : "Black & White"}</li>
             <li className="amount">Amount: ₹{quote.amount}</li>
           </ul>

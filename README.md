@@ -22,7 +22,8 @@ apps/
             Data is stored in an embedded SQLite DB using Node's built-in
             `node:sqlite` module (no native build step required).
   web/      React (Vite) app with two experiences:
-              • Customer page  (/print/:shopToken) — upload, crop, pay, track
+              • Customer page  (/print/:shopToken) — upload, crop, pick pages &
+                copies per file, pay, track
               • Shop dashboard (/dashboard)         — settings, queue, wallet, QR
   agent/    Node.js background service for the shop's Windows PC — polls the
             queue and prints silently to a real printer (or a virtual
@@ -35,6 +36,13 @@ apps/
   no native compiler / Visual Studio Build Tools needed, `npm install` just
   works on Windows/macOS/Linux). Check with `node -v`; upgrade from
   https://nodejs.org if needed.
+
+  > **Troubleshooting:** if `npm run dev:server` crashes with
+  > `Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:sqlite`
+  > (and `npm install` printed `EBADENGINE` warnings about
+  > `node: ">=22.13.0"`), your Node.js is older than 22.13 — that's the whole
+  > problem. Upgrade Node (https://nodejs.org, or `nvm install 22` /
+  > `n 22`), confirm with `node -v`, and re-run the same command.
 
 ## Getting started (development)
 
@@ -90,16 +98,28 @@ https://dashboard.razorpay.com/app/keys. Without keys configured, the app
 automatically falls back to a manual "I've paid" confirm step so the whole
 flow still works for demos/dev.
 
-## Multi-file & multi-page uploads
+## Multi-file & multi-page uploads, per-file pages & copies
 
 A customer can select several photos and/or PDFs in one go (up to 20 files,
 30MB each, 150MB combined). They're merged **server-side** — in upload order,
 reorderable and individually croppable before submitting — into a single
 print-ready PDF using `pdf-lib` (page copying/merging) and `jimp` (pure-JS
-image decoding, no native build step). Multi-page PDFs contribute all of
-their pages to the page count/price; each image contributes one page, scaled
-to fit an A4 page. The merged PDF is what's actually queued and printed, so
-the shop's printer only ever receives one combined file per job.
+image decoding, no native build step). Each image contributes one page,
+scaled to fit an A4 page. The merged PDF is what's actually queued and
+printed, so the shop's printer only ever receives one combined file per job.
+
+Per file, the customer can also:
+
+- **Pick which pages to print** from a PDF (e.g. `2-4, 7`) — only those
+  pages are merged in; price is charged per selected page. Images print as
+  one whole page.
+- **Choose how many copies** of that file's selection to print (1–200).
+
+If every file in the job has the *same* copy count, the job stores that copy
+count and the agent prints the combined PDF that many times in one pass. If
+copy counts differ per file, the copies are baked directly into the merged
+PDF (each file's pages repeated its number of times) so one print command
+still produces the right output. A job is capped at 2000 physical pages.
 
 ## Production hardening
 
