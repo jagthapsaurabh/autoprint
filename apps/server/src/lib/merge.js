@@ -35,6 +35,17 @@ async function countPdfPages(filePath, password) {
 }
 
 /**
+ * Page count of a PDF file. Unlike `countPagesForFile`, this re-throws when
+ * the PDF can't be opened (e.g. password-protected / corrupted) so callers
+ * can fail the request with a clear message.
+ */
+export async function loadPdfPageCount(filePath, password) {
+  const bytes = await fs.readFile(filePath);
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, password });
+  return doc.getPageCount();
+}
+
+/**
  * Returns the number of pages a single file will occupy once merged
  * (PDFs: their real page count; images: always 1).
  */
@@ -49,7 +60,7 @@ export async function countPagesForFile(filePath, mimeType, password) {
   return 1;
 }
 
-async function embedImagePage(pdfDoc, filePath) {
+async function prepareImagePage(pdfDoc, filePath) {
   const image = await Jimp.read(filePath);
   // Downscale oversized phone camera photos to keep the merged PDF small
   // and printing fast, without visibly hurting print quality.
@@ -73,26 +84,41 @@ async function embedImagePage(pdfDoc, filePath) {
   const drawW = embedded.width * scale;
   const drawH = embedded.height * scale;
 
+  return { embedded, drawW, drawH };
+}
+
+function addPreparedImagePage(pdfDoc, prepared) {
   const page = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-  page.drawImage(embedded, {
-    x: (A4_WIDTH - drawW) / 2,
-    y: (A4_HEIGHT - drawH) / 2,
-    width: drawW,
-    height: drawH,
+  page.drawImage(prepared.embedded, {
+    x: (A4_WIDTH - prepared.drawW) / 2,
+    y: (A4_HEIGHT - prepared.drawH) / 2,
+    width: prepared.drawW,
+    height: prepared.drawH,
   });
 }
 
-async function appendPdf(pdfDoc, filePath, password) {
+async function appendPdfPages(pdfDoc, filePath, password, pageSelection) {
   const bytes = await fs.readFile(filePath);
   const srcDoc = await PDFDocument.load(bytes, { ignoreEncryption: true, password });
-  const pageIndices = srcDoc.getPageIndices();
+  // pageSelection is a 1-based array of page numbers to include (e.g.
+  // [2,3,4,7]); absent means "all pages".
+  const pageIndices = pageSelection ? pageSelection.map((p) => p - 1) : srcDoc.getPageIndices();
   const copiedPages = await pdfDoc.copyPages(srcDoc, pageIndices);
   copiedPages.forEach((page) => pdfDoc.addPage(page));
 }
 
 /**
  * Merges an ordered list of uploaded files into a single PDF on disk.
- * @param {{filePath: string, mimeType: string, password?: string}[]} files
+ *
+ * Per-file options:
+ *  - pageSelection: 1-based array of PDF page numbers to include
+ *    (PDFs only; absent = all pages). Images always use the whole image.
+ *  - copies: number of times this file's selected pages are appended to the
+ *    merged PDF (default 1). Used when per-file copy counts differ — the
+ *    caller bakes copies into the PDF in that case so the agent can print
+ *    the whole document in one pass.
+ *
+ * @param {{filePath: string, mimeType: string, password?: string, pageSelection?: number[], copies?: number}[]} files
  * @param {string} outputPath
  * @returns {Promise<{pages: number}>}
  */
@@ -100,10 +126,20 @@ export async function mergeFilesToPdf(files, outputPath) {
   const pdfDoc = await PDFDocument.create();
 
   for (const file of files) {
+    const copies = Math.max(1, Math.min(200, Number(file.copies) || 1));
     if (file.mimeType === PDF_MIME_TYPE) {
-      await appendPdf(pdfDoc, file.filePath, file.password);
+      // One fresh copyPages() pass per copy so every copy is an independent
+      // page object (referencing one page node from several places in the
+      // page tree is legal PDF but not something pdf-lib/SumatraPDF handle
+      // well in practice).
+      for (let c = 0; c < copies; c += 1) {
+        await appendPdfPages(pdfDoc, file.filePath, file.password, file.pageSelection);
+      }
     } else if (IMAGE_MIME_TYPES.has(file.mimeType)) {
-      await embedImagePage(pdfDoc, file.filePath);
+      const prepared = await prepareImagePage(pdfDoc, file.filePath);
+      for (let c = 0; c < copies; c += 1) {
+        addPreparedImagePage(pdfDoc, prepared);
+      }
     } else {
       throw new Error(`Unsupported file type for printing: ${file.mimeType}`);
     }
