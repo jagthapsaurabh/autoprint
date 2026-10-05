@@ -79,18 +79,22 @@ if not exist "node\\node.exe" (
   exit /b 1
 )
 
-echo ============================================================
-echo  AutoPrint Agent - prints jobs from your shop's server
-echo  Keep this window open while the agent is running.
-echo ============================================================
-echo.
+:: Launch the agent in a MINIMIZED console window using Windows' built-in
+:: VBS (no extra software). The real UI is the status page the agent opens
+:: in the browser; the small taskbar window is only there for the logs.
+(
+  echo Set ws = CreateObject("WScript.Shell")
+  echo ws.CurrentDirectory = "%ROOT%"
+  echo ws.Run """%ROOT%node\\node.exe"" ""%ROOT%agent\\src\\index.js""", 7, False
+) > "%TEMP%\\autoprint-launch.vbs"
+cscript //nologo "%TEMP%\\autoprint-launch.vbs"
+del "%TEMP%\\autoprint-launch.vbs"
 
-"node\\node.exe" "agent\\src\\index.js"
-
-echo.
-echo The agent has stopped. If it stopped with an error, read the
-echo message above before starting it again.
-pause
+echo AutoPrint Agent is starting on this computer.
+echo A status page will open in your browser (green "Connected" = working).
+echo If nothing opens, look for the small AutoPrint Agent window in the
+echo taskbar (bottom of the screen), or open:  http://127.0.0.1:4173
+timeout /t 4 >nul
 endlocal
 `).trimStart();
 
@@ -139,18 +143,27 @@ AUTO PRINT AGENT - START HERE
 What is this?
   This folder is the AutoPrint print agent. It runs on the shop's Windows
   PC, watches your shop's print queue on the server, and prints jobs
-  automatically - no staff needed.
+  automatically - no staff needed. No software to install.
 
 Setup (one time, about 1 minute)
   1. Unzip this file somewhere you will keep - for example your Desktop.
-     (Right-click the zip -> "Extract All".)
-  2. Double-click "Start AutoPrint Agent.bat" in the unzipped folder.
-     Your server URL and runtime key are already saved inside the package,
-     so it should connect immediately.
-  3. Keep the black window open. When it says "Connected" and lists your
-     printers, the agent is working.
+     (Right-click the zip file -> "Extract All".)
+  2. In the unzipped folder, double-click "Start AutoPrint Agent.bat".
+     (Your server address and key are already saved inside the package -
+      there is nothing to type.)
+  3. A page opens in your browser. When it shows the green
+     "Connected - printing automatically" line, everything is working.
+     On that same page, click "Start with Windows (recommended)" so the
+     agent restarts itself automatically after every PC reboot.
 
-Changing the server or runtime key later
+Day to day
+  - That browser page is your window into the agent: it shows whether it
+    is connected, which printers it sees, and the last job it printed.
+  - Stop the agent: find the small "AutoPrint Agent" window in the
+    Windows taskbar (bottom of the screen) and close it.
+  - Do NOT move or delete this folder while the agent is running.
+
+Changing the server or key later
   Double-click "Change Server Settings.bat" and type the new values
   (shown on your dashboard, Auto Print Agent page). It saves them and
   starts the agent automatically.
@@ -161,27 +174,16 @@ Windows / antivirus warnings
   in your antivirus. If the antivirus quarantines node\\node.exe, add an
   exception for this folder.
 
-Day to day
-  - Start:   double-click "Start AutoPrint Agent.bat"
-  - Stop:    close the agent window
-  - Do NOT move or delete this folder while the agent is running.
-  - After a PC restart, start the agent again. To make it start
-    automatically with Windows: press Win+R, type "shell:startup" and
-    press Enter, then put a shortcut of "Start AutoPrint Agent.bat" in
-    that folder.
-
-Troubleshooting
-  - "Connected ... Printers detected: []" (no printers): make sure the
-    printer is installed in Windows - Settings -> Bluetooth & devices ->
-    Printers & scanners. Try restarting the agent after plugging in the
-    printer cable.
-  - "Handshake failed": the PC cannot reach the server. Check its
-    internet/WiFi, and that the Server URL is correct. A LAN address
-    (http://192.168.x.x:4000) works when the PC is on the same network
-    as the server; a public https URL works from anywhere.
-  - Printing failed for a job: the agent window shows the reason. Most
-    often it is a printer problem (paper, offline) - fix it in Windows
-    and the next job will print.
+If something goes wrong
+  - Green page says "Not connected": check the PC's internet/WiFi and
+    that the server address is correct (Change Server Settings.bat).
+  - "Printers: none detected": make sure the printer is installed in
+    Windows (Settings -> Bluetooth & devices -> Printers & scanners),
+    then restart the agent.
+  - A job failed to print: the status page shows it as "Failed" - most
+    often the printer itself needs attention (paper, offline, ink).
+  - Still stuck? The file "agent.log" in this folder has the full story -
+    just email it to your AutoPrint support.
 `).trimStart();
 
 // ---------------------------------------------------------------------------

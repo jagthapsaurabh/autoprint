@@ -109,6 +109,13 @@ Build behaviour & ops notes (server side):
 - Old-style manual setup still works: env vars / `.env` /
   `%USERPROFILE%\.autoprint\agent-config.json` (the bundle's local config
   takes priority over the home-dir one).
+- Each agent runs a **local status page** on the shop PC
+  (`http://127.0.0.1:4173`, localhost-only, `AUTOPRINT_STATUS_PORT` to
+  change) — this is the shop's UI: connection state, printers, last job,
+  and the "Start with Windows" toggle. No firewall exposure; the PC needs
+  no inbound ports.
+- For support tickets: ask the shop to email `agent.log` from the agent
+  folder (timestamped, rolls at ~1MB).
 
 ## 3. Onboarding a new client / shop (day-to-day)
 

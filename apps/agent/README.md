@@ -61,11 +61,26 @@ AutoPrint-Agent-Setup/
 └─ README-START-HERE.txt          plain-English instructions
 ```
 
-Shop experience: **download → unzip → double-click "Start AutoPrint Agent.bat"**.
-No Node.js, no npm, no installer, no typing config. The bundle is built once
-and cached in `dist/portable-build` (gitignored); it rebuilds when the agent
-source changes, and only `agent-config.json` differs per shop (injected into
-the zip stream at download time — never written into the shared cache).
+Shop experience: **download → unzip → double-click "Start AutoPrint Agent.bat"**
+→ a status page opens in their **browser** (green "Connected", printers,
+last job). No Node.js, no npm, no installer, no typing config, and no black
+console window to babysit — the `.bat` starts the agent in a *minimized*
+window using Windows' built-in VBS, and everything the shop needs to see is
+on the page:
+
+- **Status page** (`http://127.0.0.1:4173`, bound to localhost only, tries
+  4173–4182 if busy): connection state, detected printers, last job result,
+  and a **"Start with Windows"** button that adds/removes the agent from the
+  Startup folder (built-in `cscript` + WScript.Shell — nothing to install).
+  Override the port with `AUTOPRINT_STATUS_PORT`.
+- **`agent.log`** in the agent's folder: full timestamped log (rolls at ~1MB)
+  so a shop owner can email one file for support instead of describing errors.
+- `Change Server Settings.bat` re-enters URL/key and restarts the agent.
+
+The bundle is built once and cached in `dist/portable-build` (gitignored);
+it rebuilds when the agent source changes, and only `agent-config.json`
+differs per shop (injected into the zip stream at download time — never
+written into the shared cache).
 
 The portable Node runtime is fetched on first build from `nodejs.org`
 (override with `AGENT_NODE_DIST_BASE_URL` for a mirror, or

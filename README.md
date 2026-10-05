@@ -149,10 +149,15 @@ run with **zero installation** on their Windows PC:
   `Change Server Settings.bat` (re-enter URL/key) + a plain-English
   `README-START-HERE.txt`
 
-So handing it to a client is: *download → unzip → double-click*. The heavy
-bundle is built once and cached (`apps/agent/dist/portable-build`,
-gitignored), rebuilding automatically when the agent changes. The Node
-runtime is downloaded from `nodejs.org` on first build (or a mirror via
+So handing it to a (non-technical) client is: **download → unzip →
+double-click**. The launcher opens a **status page in the shop's browser**
+(green "Connected ✓", printers, last job) instead of a console window — the
+bat starts the agent minimized via Windows' built-in VBS — and the page has
+a **"Start with Windows"** button so it survives reboots without IT help.
+An `agent.log` in the folder doubles as the support ticket. The heavy bundle
+is built once and cached (`apps/agent/dist/portable-build`, gitignored),
+rebuilding automatically when the agent changes. The Node runtime is
+downloaded from `nodejs.org` on first build (or a mirror via
 `AGENT_NODE_DIST_BASE_URL`, or a local zip via `AGENT_NODE_ZIP_PATH` for
 offline setups) — see DEPLOYMENT.md.
 
