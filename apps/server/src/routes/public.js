@@ -5,7 +5,8 @@ import fs from "node:fs";
 import { nanoid } from "nanoid";
 import { prisma } from "../lib/prisma.js";
 import { computeAmount } from "../lib/pricing.js";
-import { mergeFilesToPdf, isSupportedForMerge } from "../lib/merge.js";
+import { mergeFilesToPdf, isSupportedForMerge, loadPdfPageCount } from "../lib/merge.js";
+import { parsePageSpec } from "../lib/pageSelection.js";
 
 export const publicRouter = Router();
 
@@ -15,6 +16,7 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const MAX_FILES = 20;
 const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB per file
 const MAX_TOTAL_SIZE = 150 * 1024 * 1024; // 150MB combined per upload batch
+const MAX_MERGED_PAGES = 2000; // hard cap on total physical pages per print job
 
 const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
@@ -107,10 +109,73 @@ publicRouter.post("/shop/:token/quote", upload.array("files", MAX_FILES), multer
       }
     }
 
-    const copies = Math.max(1, Math.min(200, parseInt(req.body.copies || "1", 10)));
     let colorMode = (req.body.colorMode || "GRAY").toUpperCase();
     if (shop.printRule === "ONLY_COLOR") colorMode = "COLOR";
     if (shop.printRule === "ONLY_GRAY") colorMode = "GRAY";
+
+    // Per-file page selection + copies. The web app sends `pageSpecs` as a
+    // JSON array aligned with the files' upload order, e.g.
+    //   [{"pages":"2-4, 7","copies":2}, {"pages":"","copies":1}]
+    // Old clients that only send a single global `copies` (all pages) keep
+    // working unchanged.
+    const globalCopies = Math.max(1, Math.min(200, parseInt(req.body.copies || "1", 10)));
+    let specList = null;
+    if (req.body.pageSpecs !== undefined) {
+      try {
+        specList = JSON.parse(req.body.pageSpecs);
+        if (!Array.isArray(specList)) specList = null;
+      } catch {
+        specList = null;
+      }
+      if (!specList || specList.length !== req.files.length) {
+        return res.status(400).json({ error: "Invalid page selection — it must match the number of files." });
+      }
+    }
+
+    // Plan each file: how many selected pages it has and how many copies.
+    const filePlans = [];
+    for (let i = 0; i < req.files.length; i += 1) {
+      const f = req.files[i];
+      const spec = specList ? specList[i] || {} : {};
+      const copies = Math.max(1, Math.min(200, parseInt(spec.copies ?? globalCopies, 10) || 1));
+
+      let selectedPages; // 1-based page numbers to print from this file
+      let pagesLabel;
+      if (f.mimetype === "application/pdf") {
+        let pageCount;
+        try {
+          pageCount = await loadPdfPageCount(f.path);
+        } catch (err) {
+          console.error("Failed to read PDF pages:", err);
+          cleanupFiles(req.files);
+          return res.status(422).json({
+            error:
+              "Could not process one of the files. If a PDF is password-protected or corrupted, please remove the password / re-export it and try again.",
+          });
+        }
+        const parsed = parsePageSpec(spec.pages, pageCount);
+        if (parsed.error) {
+          cleanupFiles(req.files);
+          return res.status(400).json({ error: `${f.originalname}: ${parsed.error}` });
+        }
+        selectedPages = parsed.pages;
+        pagesLabel = spec.pages ? `pages ${String(spec.pages).trim()}` : `all ${pageCount} pages`;
+      } else {
+        selectedPages = [1];
+        pagesLabel = "1 page";
+      }
+
+      filePlans.push({ fileName: f.originalname, pages: selectedPages.length, copies, pageSelection: selectedPages, pagesLabel });
+    }
+
+    // If every file wants the same number of copies, don't duplicate pages
+    // in the PDF — let the agent print the whole document that many times
+    // (one print command, and the dashboard keeps "pages" and "copies"
+    // separate). Only when copy counts differ do we bake copies into the
+    // merged PDF, since one print command can't vary copies per section.
+    const uniformCopies = filePlans.every((p) => p.copies === filePlans[0].copies);
+    const jobCopies = uniformCopies ? filePlans[0].copies : 1;
+    const bakeInCopies = !uniformCopies;
 
     const mergedFileName = `${nanoid(16)}.pdf`;
     const mergedFilePath = path.join(UPLOAD_DIR, mergedFileName);
@@ -118,7 +183,12 @@ publicRouter.post("/shop/:token/quote", upload.array("files", MAX_FILES), multer
     let pages;
     try {
       const result = await mergeFilesToPdf(
-        req.files.map((f) => ({ filePath: f.path, mimeType: f.mimetype })),
+        req.files.map((f, i) => ({
+          filePath: f.path,
+          mimeType: f.mimetype,
+          pageSelection: filePlans[i].pageSelection,
+          copies: bakeInCopies ? filePlans[i].copies : 1,
+        })),
         mergedFilePath
       );
       pages = result.pages;
@@ -133,10 +203,17 @@ publicRouter.post("/shop/:token/quote", upload.array("files", MAX_FILES), multer
       cleanupFiles(req.files);
     }
 
+    if (pages * jobCopies > MAX_MERGED_PAGES) {
+      fs.unlinkSync(mergedFilePath);
+      return res.status(400).json({
+        error: `That's ${pages * jobCopies} pages for one print job (max ${MAX_MERGED_PAGES}). Please split it into smaller jobs.`,
+      });
+    }
+
     const amount =
       shop.paymentMode === "NO_PAYMENT"
         ? 0
-        : computeAmount({ pages, copies, colorMode, colorRate: shop.colorRate, grayRate: shop.grayRate });
+        : computeAmount({ pages, copies: jobCopies, colorMode, colorRate: shop.colorRate, grayRate: shop.grayRate });
 
     const fileNames = req.files.map((f) => f.originalname);
     const fileLabel =
@@ -149,9 +226,10 @@ publicRouter.post("/shop/:token/quote", upload.array("files", MAX_FILES), multer
       fileCount: req.files.length,
       sourceFileNames: fileNames,
       pages,
-      copies,
+      copies: jobCopies,
       colorMode,
       amount,
+      perFile: filePlans.map((p) => ({ fileName: p.fileName, pages: p.pages, copies: p.copies, pagesLabel: p.pagesLabel })),
       paymentRequired: shop.paymentMode !== "NO_PAYMENT" && amount > 0,
     });
   } catch (err) {

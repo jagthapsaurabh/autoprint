@@ -1,9 +1,44 @@
 import { Router } from "express";
 import fs from "node:fs";
 import { prisma } from "../lib/prisma.js";
-import { requireAgent } from "../middleware/auth.js";
+import { requireAgent, requireAuth } from "../middleware/auth.js";
+import { streamAgentPackageZip, ZIP_FILENAME } from "../lib/agentBundle.js";
 
 export const agentRouter = Router();
+
+// Shop owner downloads the ready-to-run portable agent package (Windows).
+// The zip already contains this shop's server URL + runtime key, so on the
+// shop PC it's: unzip -> double-click "Start AutoPrint Agent.bat".
+// The first download may take a few minutes (the server downloads the
+// portable Node runtime once, then serves a cached build).
+agentRouter.get("/package", requireAuth, async (req, res) => {
+  try {
+    const shop = await prisma.shop.findUnique({ where: { ownerId: req.user.id } });
+    if (!shop) return res.status(404).json({ error: "No shop found for this account" });
+    if (!shop.subscriptionActive) {
+      return res.status(403).json({ error: "Activate the Auto Print add-on first, then download the agent." });
+    }
+
+    // Best-guess public URL the agent should talk back to. PUBLIC_BASE_URL
+    // (used for QR codes) wins; behind a reverse proxy req.protocol honors
+    // x-forwarded-proto (trust proxy is set).
+    const serverUrl =
+      process.env.PUBLIC_BASE_URL ||
+      (req.headers.origin ? new URL(req.headers.origin).origin : null) ||
+      `${req.protocol}://${req.get("host")}`;
+
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${ZIP_FILENAME}"`);
+    await streamAgentPackageZip(res, { serverUrl, runtimeKey: shop.runtimeKey });
+  } catch (err) {
+    console.error("[agent-package] failed:", err);
+    if (!res.headersSent) {
+      res.status(502).json({ error: err.userMessage || "Could not build the agent package. Try again in a minute." });
+    } else {
+      res.destroy();
+    }
+  }
+});
 
 // Agent verifies its runtime key & reports basic info. Used by "Verify & Setup".
 agentRouter.post("/handshake", requireAgent, async (req, res) => {
@@ -66,6 +101,11 @@ agentRouter.get("/queue", requireAgent, async (req, res) => {
     })),
     settings: {
       defaultPrinterName: shop.defaultPrinterName,
+      // Per-mode printer overrides: color jobs use colorPrinterName,
+      // B&W/gray jobs use grayPrinterName; either falls back to
+      // defaultPrinterName, then to the Windows default (see agent).
+      colorPrinterName: shop.colorPrinterName,
+      grayPrinterName: shop.grayPrinterName,
       printRule: shop.printRule,
     },
   });

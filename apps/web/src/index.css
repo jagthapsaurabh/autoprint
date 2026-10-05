@@ -511,6 +511,7 @@ button {
 }
 .file-list-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   background: #f7f7fc;
@@ -565,6 +566,32 @@ button {
 .file-list-actions .btn {
   padding: 4px 8px;
   font-size: 12px;
+}
+.file-list-options {
+  flex-basis: 100%;
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed #dcdffb;
+}
+.file-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.file-opt input {
+  width: 96px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #d7d9e6;
+  font-size: 13px;
+}
+.file-opt input[type="number"] {
+  width: 64px;
 }
 
 /* Print page (customer) */

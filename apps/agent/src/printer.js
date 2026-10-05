@@ -15,6 +15,18 @@ const execFileAsync = promisify(execFile);
 const PLATFORM = process.platform;
 const VIRTUAL_DIR = path.join(process.cwd(), "prints");
 
+// pdf-to-printer@5.x ships a minified CJS webpack bundle whose named exports
+// (getPrinters/print/getDefaultPrinter) are only registered at runtime via a
+// minified helper, so Node's ESM named-export detection cannot see them:
+// `import { getPrinters } from "pdf-to-printer"` yields `undefined` and the
+// agent dies with "getPrinters is not a function" (and later "print is not a
+// function" when a job actually prints). The full API is reliably available
+// on `mod.default` (the CJS module.exports object), so prefer that.
+async function loadPdfToPrinter() {
+  const mod = await import("pdf-to-printer");
+  return mod?.default && typeof mod.default.getPrinters === "function" ? mod.default : mod;
+}
+
 async function hasCups() {
   try {
     await execFileAsync("which", ["lpstat"]);
@@ -24,10 +36,21 @@ async function hasCups() {
   }
 }
 
+/**
+ * Chooses the physical printer for a job based on the shop's per-mode
+ * settings: color jobs go to the color printer, B&W/gray jobs to the gray
+ * printer. Either mode's printer falls back to the shop's default printer,
+ * which itself falls back to the Windows default (returns undefined).
+ */
+export function selectPrinter(job, settings = {}) {
+  const modePrinter = job?.colorMode === "COLOR" ? settings.colorPrinterName : settings.grayPrinterName;
+  return modePrinter || settings.defaultPrinterName || undefined;
+}
+
 export async function listPrinters() {
   if (PLATFORM === "win32") {
     try {
-      const { getPrinters } = await import("pdf-to-printer");
+      const { getPrinters } = await loadPdfToPrinter();
       const printers = await getPrinters();
       return printers.map((p) => p.name);
     } catch (err) {
@@ -54,7 +77,7 @@ export async function listPrinters() {
 
 export async function printFile(filePath, { printer, copies = 1, colorMode = "GRAY" } = {}) {
   if (PLATFORM === "win32") {
-    const { print } = await import("pdf-to-printer");
+    const { print } = await loadPdfToPrinter();
     await print(filePath, {
       printer: printer || undefined,
       copies,

@@ -1,3 +1,4 @@
+import "./lib/nodeVersion.js"; // must stay first — fails fast on Node < 22.13
 import "dotenv/config";
 import express from "express";
 import http from "node:http";

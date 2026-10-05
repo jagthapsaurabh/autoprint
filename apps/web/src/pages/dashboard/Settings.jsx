@@ -32,6 +32,8 @@ export default function Settings() {
       grayRate: form.grayRate,
       upiId: form.upiId,
       defaultPrinterName: form.defaultPrinterName,
+      colorPrinterName: form.colorPrinterName || "",
+      grayPrinterName: form.grayPrinterName || "",
       name: form.name,
       address: form.address,
       whatsapp: form.whatsapp,
@@ -66,7 +68,7 @@ export default function Settings() {
             <option value="ONLY_GRAY">Only Gray / B&W Print</option>
           </select>
 
-          <label>Auto Print Printer</label>
+          <label>Default Printer (fallback for both modes)</label>
           <select value={form.defaultPrinterName || ""} onChange={update("defaultPrinterName")}>
             <option value="">Windows Default Printer</option>
             {printers.map((p) => (
@@ -75,6 +77,36 @@ export default function Settings() {
               </option>
             ))}
           </select>
+
+          <div className="field-row-2">
+            <div>
+              <label>Color printer (color jobs)</label>
+              <select value={form.colorPrinterName || ""} onChange={update("colorPrinterName")}>
+                <option value="">Use default printer</option>
+                {printers.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label>Black &amp; white printer (B&amp;W jobs)</label>
+              <select value={form.grayPrinterName || ""} onChange={update("grayPrinterName")}>
+                <option value="">Use default printer</option>
+                {printers.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <p className="muted">
+            Jobs are sent to the printer matching their mode — color jobs to the color printer,
+            black &amp; white jobs to the B&amp;W printer. Leave one on "Use default printer" to
+            fall back to the default printer above.
+          </p>
         </fieldset>
 
         <fieldset>
