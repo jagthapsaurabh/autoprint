@@ -80,15 +80,35 @@ The SQLite DB and uploaded files persist in the `autoprint-data` volume.
 Every shop that wants Auto Print installs the small background agent on the
 Windows PC connected to their printer:
 
-1. Shop owner logs into the dashboard → **Auto Print Agent** → copies their
-   **runtime key**.
-2. On the shop PC, package the agent into a Windows `.exe` (see
-   `apps/agent/README.md` for the `pkg` + Inno Setup steps) — do this once,
-   then distribute the resulting installer to every client shop.
-3. Run the installer, paste the runtime key + your server's public URL when
-   prompted (or edit `%USERPROFILE%\.autoprint\agent-config.json`).
-4. The agent auto-detects installed printers and starts polling for jobs.
-   Add it to Windows Startup so it survives reboots (see agent README).
+1. Shop owner logs into the dashboard → **Auto Print Agent** → **Download
+   Agent Package**. The server builds the zip on demand: portable
+   Node.js (win-x64) + agent code + pre-installed dependencies, and
+   pre-fills `agent-config.json` with **this shop's** server URL and
+   runtime key (injected at download time, never stored on disk between
+   shops).
+2. On the shop PC: unzip → double-click **Start AutoPrint Agent.bat** →
+   keep the window open. Nothing else to configure.
+3. The agent auto-detects installed printers and starts polling for jobs.
+   `README-START-HERE.txt` inside the package covers daily use, the
+   Windows-startup trick, antivirus warnings and troubleshooting.
+4. To re-point a PC at a different server/key: **Change Server Settings.bat**
+   (inside the package) rewrites the local `agent-config.json`.
+
+Build behaviour & ops notes (server side):
+
+- The bundle is built once and cached in `apps/agent/dist/portable-build`
+  (gitignored); it rebuilds automatically when agent source changes.
+- The first download fetches the portable Node runtime
+  (`AGENT_BUNDLE_NODE_VERSION`, default 22.22.3) from `nodejs.org` — or a
+  mirror via `AGENT_NODE_DIST_BASE_URL` (e.g.
+  `https://cdn.npmmirror.com/binaries/node` where nodejs.org is slow).
+- **Offline / air-gapped shops:** download `node-v<version>-win-x64.zip`
+  once on a connected machine and point the server at it with
+  `AGENT_NODE_ZIP_PATH=/path/to/node-v…-win-x64.zip` — no internet needed
+  at build time.
+- Old-style manual setup still works: env vars / `.env` /
+  `%USERPROFILE%\.autoprint\agent-config.json` (the bundle's local config
+  takes priority over the home-dir one).
 
 ## 3. Onboarding a new client / shop (day-to-day)
 

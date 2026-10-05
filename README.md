@@ -27,7 +27,9 @@ apps/
               • Shop dashboard (/dashboard)         — settings, queue, wallet, QR
   agent/    Node.js background service for the shop's Windows PC — polls the
             queue and prints silently to a real printer (or a virtual
-            fallback for local testing). Packaged into a Windows .exe with pkg.
+            fallback for local testing). Distributed as a portable Windows
+            bundle (built-in Node.js + double-click .bat, zero install) —
+            see "Agent distribution" below.
 ```
 
 ## Requirements
@@ -134,6 +136,25 @@ printers the agent reports):
 
 The agent picks the printer per job from its `colorMode`, so a mixed queue
 sends each job to the right machine automatically.
+
+## Agent distribution (portable Windows bundle)
+
+The dashboard's **Download Agent Package** button serves a zip the shop can
+run with **zero installation** on their Windows PC:
+
+- portable Node.js runtime (win-x64) + agent code + pre-installed deps
+- **`agent-config.json` pre-filled with that shop's server URL + runtime
+  key** (injected per download, never persisted between shops)
+- `Start AutoPrint Agent.bat` (double-click to run) and
+  `Change Server Settings.bat` (re-enter URL/key) + a plain-English
+  `README-START-HERE.txt`
+
+So handing it to a client is: *download → unzip → double-click*. The heavy
+bundle is built once and cached (`apps/agent/dist/portable-build`,
+gitignored), rebuilding automatically when the agent changes. The Node
+runtime is downloaded from `nodejs.org` on first build (or a mirror via
+`AGENT_NODE_DIST_BASE_URL`, or a local zip via `AGENT_NODE_ZIP_PATH` for
+offline setups) — see DEPLOYMENT.md.
 
 ## Production hardening
 

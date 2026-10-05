@@ -37,30 +37,47 @@ The agent looks for config in this order:
 
 1. `AUTOPRINT_SERVER_URL` / `AUTOPRINT_RUNTIME_KEY` environment variables
 2. `.env` file next to the executable (see `.env.example`)
-3. `~/.autoprint/agent-config.json` — `{ "serverUrl": "...", "runtimeKey": "..." }`
+3. `agent-config.json` in the current working directory — this is what the
+   portable bundle uses (the `.bat` launchers start the agent from the
+   bundle folder, where the download pre-fills this file)
+4. `~/.autoprint/agent-config.json` — `{ "serverUrl": "...", "runtimeKey": "..." }`
 
-The shop dashboard shows the exact `.env` snippet to use for a given shop.
+The local (bundle) config wins over the home-dir one. The shop dashboard
+shows the exact `.env` snippet to use for a given shop.
 
-## Packaging as a Windows installer/.exe
+## Distributing to shop PCs (portable bundle — no install)
 
-This project uses [`pkg`](https://www.npmjs.com/package/pkg) to bundle the
-agent + Node runtime into a single Windows executable (matching the
-"AkPrintHub-Smart-AutoPrint-Setup.exe" style installer from the reference
-product):
+The primary way shops get the agent is the **Download Agent Package** button
+on the dashboard (Dashboard → Auto Print Agent). The server
+(`apps/server/src/lib/agentBundle.js`) builds a self-contained Windows zip:
 
-```bash
-cd apps/agent
-npm install
-npm run package:win
-# -> dist/AutoPrint-Agent.exe
+```
+AutoPrint-Agent-Setup/
+├─ node/                          portable Node.js (win-x64)
+├─ agent/                         this code + pre-installed node_modules
+├─ agent-config.json              THIS shop's server URL + runtime key
+├─ Start AutoPrint Agent.bat      double-click to run
+├─ Change Server Settings.bat     re-enter URL/key (rewrites the config)
+└─ README-START-HERE.txt          plain-English instructions
 ```
 
-For a proper installer experience (Start Menu shortcut, "Run at startup",
-Windows Firewall prompt handling, etc.) wrap the resulting `.exe` with
-[Inno Setup](https://jrsoftware.org/isinfo.php) or
-[electron-builder](https://www.electron.build/) NSIS target. A minimal Inno
-Setup script is included at `installer/autoprint-agent.iss` as a starting
-point — it just needs the packaged `.exe` and the app icon.
+Shop experience: **download → unzip → double-click "Start AutoPrint Agent.bat"**.
+No Node.js, no npm, no installer, no typing config. The bundle is built once
+and cached in `dist/portable-build` (gitignored); it rebuilds when the agent
+source changes, and only `agent-config.json` differs per shop (injected into
+the zip stream at download time — never written into the shared cache).
+
+The portable Node runtime is fetched on first build from `nodejs.org`
+(override with `AGENT_NODE_DIST_BASE_URL` for a mirror, or
+`AGENT_NODE_ZIP_PATH` for a fully offline build; version via
+`AGENT_BUNDLE_NODE_VERSION`, default 22.22.3).
+
+### Legacy: single .exe via pkg
+
+An older approach bundles the agent with
+[`pkg`](https://www.npmjs.com/package/pkg) (`npm run package:win`) — pkg is
+unmaintained and the portable bundle is strongly preferred. An Inno Setup
+script at `installer/autoprint-agent.iss` remains for that path.
 
 ### Auto-start with Windows
 
